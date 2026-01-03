@@ -1,67 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manual Control</title>
+    <meta charset="utf-8" />
+    <title>nRF52 Wake Tool</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f4; }
-        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 350px; margin: auto; }
-        button { width: 100%; padding: 15px; margin: 10px 0; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        .btn-connect { background: #6c757d; color: white; }
-        .btn-send { background: #007bff; color: white; display: none; }
-        #status { margin-top: 15px; font-size: 0.9em; color: #555; }
+        body { font-family: sans-serif; padding: 20px; text-align: center; }
+        button { padding: 20px; font-size: 18px; width: 80%; max-width: 300px; margin-bottom: 20px; cursor: pointer; }
+        #log { margin-top: 20px; white-space: pre-line; border: 1px solid #ccc; padding: 10px; text-align: left; font-family: monospace; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h3>Step-by-Step Control</h3>
-        <button id="connectBtn" class="btn-connect" onclick="connect()">1. BIND / CONNECT</button>
-        <button id="sendBtn" class="btn-send" onclick="sendWake()">2. SEND WAKE BYTE</button>
-        <div id="status">Status: Disconnected</div>
-    </div>
+    <h1>nRF52 Wake Tool</h1>
+    <button id="btnStart" style="background: #28a745; color: white;">WAKE DEVICE</button>
+    <div id="log">Status: Ready</div>
 
     <script>
-        let gattServer = null;
-        let wakeChar = null;
-        const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
-        const CHAR_UUID    = "abcd1234-1234-1234-1234-1234567890ab";
+        const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+        const CHAR_UUID    = 'abcd1234-1234-1234-1234-1234567890ab';
+        const logEl = document.getElementById('log');
 
-        async function connect() {
-            const log = document.getElementById('status');
+        function log(msg) { logEl.textContent += msg + '\n'; }
+
+        document.getElementById('btnStart').addEventListener('click', async () => {
+            logEl.textContent = ""; // Clear log
             try {
+                log('Searching for nRF52_W...');
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'nRF52_W' }],
                     optionalServices: [SERVICE_UUID]
                 });
 
-                log.innerText = "Connecting...";
-                gattServer = await device.gatt.connect();
-                
-                log.innerText = "Getting Service...";
-                const service = await gattServer.getPrimaryService(SERVICE_UUID);
-                
-                log.innerText = "Getting Characteristic...";
-                wakeChar = await service.getCharacteristic(CHAR_UUID);
+                log('Connecting...');
+                const server = await device.gatt.connect();
 
-                log.innerHTML = "<b style='color:green'>CONNECTED.</b> Now press Send.";
-                document.getElementById('sendBtn').style.display = "block";
-                document.getElementById('connectBtn').style.background = "#28a745";
-            } catch (e) {
-                log.innerHTML = "<b style='color:red'>Error:</b> " + e.message;
-            }
-        }
+                log('Connected. Discovering Service...');
+                const service = await server.getPrimaryService(SERVICE_UUID);
 
-        async function sendWake() {
-            const log = document.getElementById('status');
-            try {
-                log.innerText = "Sending 0x01...";
-                await wakeChar.writeValueWithResponse(new Uint8Array([0x01]));
-                log.innerHTML = "<b style='color:green'>SUCCESS: Byte Sent!</b>";
-            } catch (e) {
-                log.innerHTML = "<b style='color:red'>Send Failed:</b> " + e.message;
+                log('Discovering Characteristic...');
+                const characteristic = await service.getCharacteristic(CHAR_UUID);
+
+                log('Writing 0x01...');
+                await characteristic.writeValue(new Uint8Array([0x01]));
+
+                log('✅ SUCCESS! Wake signal sent.');
+                setTimeout(() => { device.gatt.disconnect(); log('Disconnected.'); }, 1000);
+
+            } catch (err) {
+                log('❌ Error: ' + err);
             }
-        }
+        });
     </script>
 </body>
 </html>
