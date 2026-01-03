@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Wake</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; }
+        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button { width: 100%; padding: 20px; margin: 10px 0; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-wake { background: #4285f4; color: white; }
+        .btn-open { background: #34a853; color: white; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Device Controller</h1>
+        <button class="btn-wake" onclick="wakeDevice()">1. WAKE nRF52</button>
+        <p id="status">Status: Ready</p>
+        <button class="btn-open" onclick="window.location.href='http://192.168.4.1'">2. OPEN ESP32 PAGE</button>
+    </div>
+
+    <script>
+        // Register Service Worker for Offline Use
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+
+        async function wakeDevice() {
+            const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
+            const CHAR_UUID = "abcd1234-1234-1234-1234-1234567890ab";
+            
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'nRF52_W' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                const char = await service.getCharacteristic(CHAR_UUID);
+                await char.writeValue(new Uint8Array([0x01]));
+                document.getElementById('status').innerText = "Status: Wake Signal Sent!";
+                device.gatt.disconnect();
+            } catch (e) {
+                document.getElementById('status').innerText = "Error: " + e;
+            }
+        }
+    </script>
+</body>
+</html>
