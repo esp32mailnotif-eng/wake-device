@@ -3,47 +3,88 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32 Wake</title>
+    <title>IoT Wake Remote</title>
     <link rel="manifest" href="manifest.json">
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f4f9; }
-        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        button { width: 100%; padding: 20px; margin: 10px 0; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; }
-        .btn-wake { background: #4285f4; color: white; }
-        .btn-open { background: #34a853; color: white; }
+        body { font-family: -apple-system, sans-serif; text-align: center; padding: 20px; background: #f0f2f5; color: #1c1e21; }
+        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
+        h1 { font-size: 24px; margin-bottom: 10px; }
+        button { width: 100%; padding: 18px; margin: 12px 0; font-size: 16px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; transition: 0.2s; }
+        .btn-wake { background: #007bff; color: white; }
+        .btn-wake:active { background: #0056b3; transform: scale(0.98); }
+        .btn-open { background: #28a745; color: white; }
+        #status { font-size: 14px; color: #65676b; margin-top: 20px; padding: 10px; background: #e9ecef; border-radius: 8px; min-height: 40px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Device Controller</h1>
+        <h1>Device Remote</h1>
+        <p>Ensure Bluetooth is ON</p>
+        
         <button class="btn-wake" onclick="wakeDevice()">1. WAKE nRF52</button>
-        <p id="status">Status: Ready</p>
-        <button class="btn-open" onclick="window.location.href='http://192.168.4.1'">2. OPEN ESP32 PAGE</button>
+        
+        <div id="status">Status: Ready to Scan</div>
+        
+        <button class="btn-open" onclick="window.location.href='http://192.168.4.1'">2. GO TO ESP32 PAGE</button>
     </div>
 
     <script>
-        // Register Service Worker for Offline Use
+        // --- 1. CONFIGURATION (Check your UUIDs here) ---
+        // USE LOWERCASE ONLY
+        const TARGET_SERVICE = "12345678-1234-1234-1234-1234567890ab"; 
+        const TARGET_CHAR    = "abcd1234-1234-1234-1234-1234567890ab";
+
+        // --- 2. OFFLINE SERVICE WORKER ---
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
+            navigator.serviceWorker.register('sw.js').catch(err => console.log("SW Export failed", err));
         }
 
+        // --- 3. WAKE LOGIC ---
         async function wakeDevice() {
-            const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
-            const CHAR_UUID = "abcd1234-1234-1234-1234-1234567890ab";
+            const log = document.getElementById('status');
             
             try {
+                log.innerText = "Status: Opening Bluetooth Picker...";
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'nRF52_W' }],
-                    optionalServices: [SERVICE_UUID]
+                    optionalServices: [TARGET_SERVICE]
                 });
+
+                log.innerText = "Status: Connecting to GATT Server...";
                 const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                const char = await service.getCharacteristic(CHAR_UUID);
-                await char.writeValue(new Uint8Array([0x01]));
-                document.getElementById('status').innerText = "Status: Wake Signal Sent!";
-                device.gatt.disconnect();
-            } catch (e) {
-                document.getElementById('status').innerText = "Error: " + e;
+
+                log.innerText = "Status: Discovering Service...";
+                const service = await server.getPrimaryService(TARGET_SERVICE);
+
+                log.innerText = "Status: Discovering Characteristic...";
+                const characteristic = await service.getCharacteristic(TARGET_CHAR);
+
+                log.innerText = "Status: Attempting to Write Byte...";
+                const data = new Uint8Array([0x01]);
+
+                // Try different write methods (Fixes incompatibility with different nRF52 firmwares)
+                try {
+                    await characteristic.writeValueWithResponse(data);
+                } catch (e) {
+                    console.log("WriteWithResponse failed, trying WithoutResponse...");
+                    try {
+                        await characteristic.writeValueWithoutResponse(data);
+                    } catch (e2) {
+                        console.log("Both specific writes failed, trying Deprecated writeValue...");
+                        await characteristic.writeValue(data);
+                    }
+                }
+
+                log.innerHTML = "<b style='color:green'>SUCCESS: Wake Signal Sent!</b>";
+                
+                // Disconnect cleanly after 2 seconds
+                setTimeout(() => {
+                    if (device.gatt.connected) device.gatt.disconnect();
+                }, 2000);
+
+            } catch (error) {
+                log.innerHTML = "<b style='color:red'>Error:</b> " + error.message;
+                console.error(error);
             }
         }
     </script>
