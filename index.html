@@ -2,39 +2,37 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Auto Wake Pro v2.1</title>
+    <title>Auto Wake Pro v2.2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="manifest.json">
     <script>
-        // Register Service Worker with cache-busting version
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=2.1');
+            navigator.serviceWorker.register('sw.js?v=2.2');
         }
     </script>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f7f6; }
-        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
+        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,1); max-width: 400px; margin: auto; }
         .btn { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; display: block; text-decoration: none; }
         #startBtn { background: #007bff; color: white; }
         #redirectBtn { background: #28a745; color: white; display: none; } 
         .timer { font-size: 48px; font-weight: bold; color: #dc3545; margin: 20px 0; display: none; }
-        #status { font-family: monospace; font-size: 13px; margin: 15px 0; color: #666; min-height: 40px; }
-        .instructions { background: #ff9800; color: white; padding: 20px; border-radius: 15px; font-size: 16px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; border: 2px solid #e68a00; }
+        #status { font-family: monospace; font-size: 14px; margin: 15px 0; color: #333; font-weight: bold; }
+        .instructions { background: #ff5722; color: white; padding: 25px; border-radius: 15px; font-size: 18px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>Device Controller</h2>
-        <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
+        <h2>System Wake</h2>
+        <button id="startBtn" class="btn" onclick="initiateWake()">1. START WAKE</button>
         <div id="countdown" class="timer">75</div>
-        <div id="status">Ready (v2.1)</div>
+        <div id="status">Status: Ready (v2.2)</div>
 
         <div id="stepInstruction" class="instructions" onclick="openSettings()">
-            WAKE SENT! ⚡<br>
-            TAP HERE TO OPEN WI-FI LIST
+            STEP 2:<br>TAP TO OPEN WI-FI LIST
         </div>
 
-        <a id="redirectBtn" href="http://192.168.4.1" class="btn">GO TO DEVICE PAGE (192.168.4.1)</a>
+        <a id="redirectBtn" href="http://192.168.4.1" class="btn">3. OPEN DEVICE PAGE</a>
     </div>
 
     <script>
@@ -44,18 +42,18 @@
         let timerId = null;
         let bluetoothDevice = null;
 
-        // More robust Android Intent for Wi-Fi Settings
+        // The absolute most compatible Android Intent
         function openSettings() {
-            console.log("Attempting to open Wi-Fi settings...");
+            console.log("Jumping to settings...");
             window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
         }
 
         async function initiateWake() {
             const status = document.getElementById('status');
             try {
-                // FIXED: acceptAllDevices ensures your C3 shows up
+                // FIXED: acceptAllDevices = true (No filters used)
                 bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
+                    acceptAllDevices: true, 
                     optionalServices: [S_UUID]
                 });
 
@@ -87,21 +85,20 @@
 
         function onWakeAcknowledged() {
             clearInterval(timerId);
-            document.getElementById('status').innerHTML = "<b style='color:green'>PULSE SENT!</b>";
+            document.getElementById('status').innerHTML = "SIGNAL ACKNOWLEDGED!";
             document.getElementById('countdown').style.display = 'none';
             document.getElementById('stepInstruction').style.display = 'block';
             document.getElementById('redirectBtn').style.display = 'block';
             
             if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
-            if (navigator.vibrate) navigator.vibrate(200);
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
 
-            // AUTO-TRY settings
-            setTimeout(openSettings, 1000);
+            // Attempt auto-jump
+            setTimeout(openSettings, 800);
             autoDetectWifi();
         }
 
         function autoDetectWifi() {
-            // Checks if the phone switched to the ESP32's network
             fetch('http://192.168.4.1', { mode: 'no-cors' })
                 .then(() => window.location.href = "http://192.168.4.1")
                 .catch(() => setTimeout(autoDetectWifi, 4000));
