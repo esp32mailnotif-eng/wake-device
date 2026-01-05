@@ -1,54 +1,178 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8" />
-    <title>nRF52 Wake Tool</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; text-align: center; }
-        button { padding: 20px; font-size: 18px; width: 80%; max-width: 300px; margin-bottom: 20px; cursor: pointer; }
-        #log { margin-top: 20px; white-space: pre-line; border: 1px solid #ccc; padding: 10px; text-align: left; font-family: monospace; }
-    </style>
+  <meta charset="utf-8" />
+  <title>C3 Auto Wake</title>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    button { padding: 10px 20px; font-size: 16px; margin-right: 10px; }
+    #log { margin-top: 20px; white-space: pre-line; border: 1px solid #ccc; padding: 10px; }
+    #countdown { margin-top: 12px; font-weight: bold; }
+
+    .modalBackdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .modal {
+      background: #fff;
+      padding: 16px;
+      width: min(400px, 100%);
+      border-radius: 10px;
+    }
+    label { display:block; margin-top: 10px; }
+    input, select { width: 100%; padding: 8px; font-size: 16px; }
+  </style>
 </head>
+
 <body>
-    <h1>nRF52 Wake Tool</h1>
-    <button id="btnStart" style="background: #28a745; color: white;">WAKE DEVICE</button>
-    <div id="log">Status: Ready</div>
+<h1>C3 Auto Wake</h1>
 
-    <script>
-        const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
-        const CHAR_UUID    = 'abcd1234-1234-1234-1234-1234567890ab';
-        const logEl = document.getElementById('log');
+<button id="btnStart">Start auto wake</button>
+<button id="btnStop">Stop</button>
 
-        function log(msg) { logEl.textContent += msg + '\n'; }
+<div id="countdown"></div>
+<div id="log"></div>
 
-        document.getElementById('btnStart').addEventListener('click', async () => {
-            logEl.textContent = ""; // Clear log
-            try {
-                log('Searching for nRF52_W...');
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'nRF52_W' }],
-                    optionalServices: [SERVICE_UUID]
-                });
+<!-- SSID Modal -->
+<div id="ssidBackdrop" class="modalBackdrop">
+  <div class="modal">
+    <h2>Enter Wi-Fi</h2>
 
-                log('Connecting...');
-                const server = await device.gatt.connect();
+    <label>SSID</label>
+    <input id="ssidInput" placeholder="WiFi name">
 
-                log('Connected. Discovering Service...');
-                const service = await server.getPrimaryService(SERVICE_UUID);
+    <label>Password</label>
+    <input id="passInput" type="password" placeholder="optional">
 
-                log('Discovering Characteristic...');
-                const characteristic = await service.getCharacteristic(CHAR_UUID);
+    <br><br>
+    <button id="btnSubmitSsid">Submit</button>
+  </div>
+</div>
 
-                log('Writing 0x01...');
-                await characteristic.writeValue(new Uint8Array([0x01]));
+<script>
+/* ================= CONFIG ================= */
+const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+const CHAR_UUID    = 'abcd1234-1234-1234-1234-1234567890ab';
+const MIN_WAKE_MS  = 60000;
 
-                log('✅ SUCCESS! Wake signal sent.');
-                setTimeout(() => { device.gatt.disconnect(); log('Disconnected.'); }, 1000);
+/* ================= ELEMENTS ================= */
+const logEl = document.getElementById('log');
+const countdownEl = document.getElementById('countdown');
+const ssidBackdrop = document.getElementById('ssidBackdrop');
+const ssidInput = document.getElementById('ssidInput');
+const passInput = document.getElementById('passInput');
 
-            } catch (err) {
-                log('❌ Error: ' + err);
-            }
-        });
-    </script>
+/* ================= STATE ================= */
+let device = null;
+let running = false;
+let retryTimer = null;
+let countdownTimer = null;
+let wakeEndTime = 0;
+
+/* ================= HELPERS ================= */
+function log(msg) {
+  logEl.textContent += msg + '\n';
+}
+
+function stopAll(reason) {
+  running = false;
+  clearTimeout(retryTimer);
+  clearInterval(countdownTimer);
+  countdownEl.textContent = '';
+  if (reason) log('Stopped: ' + reason);
+}
+
+/* ================= COUNTDOWN ================= */
+function startCountdown(ms) {
+  wakeEndTime = Date.now() + ms;
+  countdownTimer = setInterval(() => {
+    const left = wakeEndTime - Date.now();
+    if (left <= 0) {
+      countdownEl.textContent = 'Countdown complete ✅';
+      clearInterval(countdownTimer);
+      return;
+    }
+    const s = Math.ceil(left / 1000);
+    countdownEl.textContent =
+      'Countdown: ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+  }, 250);
+}
+
+/* ================= BLUETOOTH ================= */
+async function requestDevice() {
+  log('Opening Bluetooth chooser...');
+  device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [SERVICE_UUID]
+  });
+  log('Selected: ' + (device.name || 'unnamed'));
+}
+
+async function tryWake() {
+  if (!running) return;
+
+  try {
+    log('Connecting...');
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    const ch = await service.getCharacteristic(CHAR_UUID);
+
+    await ch.writeValue(new Uint8Array([0x01]));
+    log('✅ Wake sent');
+    server.disconnect();
+
+    running = false;
+
+    const wait = Math.max(0, wakeEndTime - Date.now());
+    setTimeout(() => {
+      ssidBackdrop.style.display = 'flex';
+    }, wait);
+
+  } catch (e) {
+    log('Retry in 5s...');
+    retryTimer = setTimeout(tryWake, 5000);
+  }
+}
+
+/* ================= BUTTONS ================= */
+document.getElementById('btnStart').onclick = async () => {
+  logEl.textContent = '';
+  if (!window.isSecureContext || !navigator.bluetooth) {
+    alert('Use HTTPS + Chrome/Edge');
+    return;
+  }
+
+  if (!device) await requestDevice();
+
+  running = true;
+  startCountdown(MIN_WAKE_MS);
+  tryWake();
+};
+
+document.getElementById('btnStop').onclick = () => {
+  stopAll('User stop');
+};
+
+document.getElementById('btnSubmitSsid').onclick = () => {
+  log('SSID: ' + ssidInput.value);
+  ssidBackdrop.style.display = 'none';
+};
+
+/* ================= SERVICE WORKER ================= */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
+}
+</script>
 </body>
 </html>
+
+
