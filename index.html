@@ -1,245 +1,118 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8">
-  <title>Device Auto Wake & Setup</title>
-
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#ffffff">
-  <link rel="manifest" href="manifest.webmanifest">
-
-  <style>
-    body { font-family: sans-serif; padding: 16px; line-height: 1.4; }
-    h1 { margin-top: 0; }
-    button { padding: 10px 16px; font-size: 16px; margin: 6px 6px 6px 0; }
-    #log { margin-top: 14px; white-space: pre-line; border: 1px solid #ccc; padding: 10px; }
-    #countdown { font-weight: bold; margin-top: 10px; }
-
-    .modalBackdrop {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.45);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
-      padding: 16px;
-    }
-    .modal {
-      background: #fff;
-      border-radius: 12px;
-      padding: 16px;
-      width: min(520px, 100%);
-    }
-    .modal h2 { margin-top: 0; }
-    .muted { color: #555; font-size: 14px; }
-    .actions { margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
-    code { background: #f2f2f2; padding: 2px 6px; border-radius: 6px; }
-  </style>
+    <meta charset="utf-8" />
+    <title>Auto Wake Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f7f6; }
+        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
+        .btn { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; display: block; text-decoration: none; }
+        #startBtn { background: #007bff; color: white; }
+        #redirectBtn { background: #28a745; color: white; display: none; } /* Hidden until wake sent */
+        .timer { font-size: 48px; font-weight: bold; color: #dc3545; margin: 20px 0; display: none; }
+        #status { font-family: monospace; font-size: 13px; margin: 15px 0; color: #666; min-height: 40px; }
+        .instructions { background: #fff3cd; padding: 15px; border-radius: 10px; font-size: 14px; display: none; border: 1px solid #ffeeba; margin-top: 15px; }
+    </style>
 </head>
-
 <body>
 
-<h1>Device Auto Wake & Setup</h1>
+<div class="card">
+    <h2>Device Controller</h2>
+    
+    <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
+    
+    <div id="countdown" class="timer">75</div>
+    
+    <div id="status">Ready...</div>
 
-<p>
-<b>User instructions:</b><br>
-1) Press <b>Auto Wake</b> and wait for the device to appear.<br>
-2) Press <b>Pair</b> and confirm Bluetooth pairing.<br>
-3) The phone will retry automatically and wake the device (countdown shown).<br>
-4) When prompted, connect to the device Wi-Fi AP.<br>
-5) After connecting, return to Chrome using <b>Recent Apps</b>.<br>
-6) The setup page will open automatically.
-</p>
-
-<button id="btnStart">Auto Wake</button>
-<button id="btnPair" disabled>Pair</button>
-<button id="btnStop">Stop</button>
-
-<div id="countdown"></div>
-<div id="log"></div>
-
-<!-- Wi-Fi / AP modal -->
-<div id="apBackdrop" class="modalBackdrop">
-  <div class="modal">
-    <h2>Connect to Device Wi-Fi</h2>
-
-    <p>
-      The device is awake.<br>
-      Please open Wi-Fi settings and connect to the device Access Point.
-    </p>
-
-    <p class="muted">
-      After connecting, return to Chrome using <b>Recent Apps</b>.<br>
-      The setup page will open automatically.
-    </p>
-
-    <p class="muted">
-      Device page: <code>http://192.168.4.1</code>
-    </p>
-
-    <p id="apStatus" style="font-weight:bold;"></p>
-
-    <div class="actions">
-      <button id="btnOpenWifi">Open Wi-Fi Settings</button>
-      <button id="btnOpenManual">Open Device Page</button>
-      <button id="btnCloseModal">Close</button>
+    <div id="stepInstruction" class="instructions">
+        <b>WAKE SIGNAL SENT!</b><br>
+        1. Connect to ESP32 Wi-Fi in Settings.<br>
+        2. Return here to open the device page.
     </div>
-  </div>
+
+    <a id="redirectBtn" href="http://192.168.4.1" class="btn">OPEN DEVICE PAGE (192.168.4.1)</a>
 </div>
 
 <script>
-/* ================= CONFIG ================= */
-const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
-const CHAR_UUID    = 'abcd1234-1234-1234-1234-1234567890ab';
+    const S_UUID = '12345678-1234-1234-1234-1234567890ab';
+    const C_UUID = 'abcd1234-1234-1234-1234-1234567890ab';
+    
+    let timeLeft = 75;
+    let timerId = null;
+    let bluetoothDevice = null;
 
-const AP_URL = 'http://192.168.4.1/';
-const WAKE_COUNTDOWN_MS = 75_000;
+    async function initiateWake() {
+        const status = document.getElementById('status');
+        try {
+            bluetoothDevice = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'C3' }, { namePrefix: 'nRF' }],
+                optionalServices: [S_UUID]
+            });
 
-/* ================= STATE ================= */
-let device = null;
-let running = false;
-let retryTimer = null;
-let countdownTimer = null;
-let countdownEnd = 0;
-let apPollTimer = null;
-
-/* ================= UI ================= */
-const logEl = document.getElementById('log');
-const countdownEl = document.getElementById('countdown');
-const btnStart = document.getElementById('btnStart');
-const btnPair = document.getElementById('btnPair');
-const btnStop = document.getElementById('btnStop');
-
-const apBackdrop = document.getElementById('apBackdrop');
-const apStatus = document.getElementById('apStatus');
-const btnOpenWifi = document.getElementById('btnOpenWifi');
-const btnOpenManual = document.getElementById('btnOpenManual');
-const btnCloseModal = document.getElementById('btnCloseModal');
-
-/* ================= HELPERS ================= */
-function log(msg) {
-  console.log(msg);
-  logEl.textContent += msg + '\n';
-}
-
-function stopAll(reason) {
-  running = false;
-  clearTimeout(retryTimer);
-  clearInterval(countdownTimer);
-  clearInterval(apPollTimer);
-  countdownEl.textContent = '';
-  if (reason) log('Stopped: ' + reason);
-}
-
-/* ================= COUNTDOWN ================= */
-function startCountdown(ms) {
-  countdownEnd = Date.now() + ms;
-  countdownTimer = setInterval(() => {
-    const left = countdownEnd - Date.now();
-    if (left <= 0) {
-      countdownEl.textContent = 'Countdown complete';
-      clearInterval(countdownTimer);
-      return;
+            document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('countdown').style.display = 'block';
+            startTimer();
+            attemptConnection();
+        } catch (err) {
+            status.innerText = "Error: " + err.message;
+        }
     }
-    const s = Math.ceil(left / 1000);
-    countdownEl.textContent = 'Waking device… ' + s + 's';
-  }, 250);
-}
 
-/* ================= BLE ================= */
-async function requestDevice() {
-  log('Waiting for BLE device...');
-  device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [SERVICE_UUID]
-  });
-  log('Device found: ' + (device.name || 'unnamed'));
-  btnPair.disabled = false;
-}
+    async function attemptConnection() {
+        const status = document.getElementById('status');
+        while (timeLeft > 0) {
+            try {
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(S_UUID);
+                const char = await service.getCharacteristic(C_UUID);
+                await char.writeValue(new Uint8Array([0x01]));
+                
+                onWakeAcknowledged();
+                return;
+            } catch (err) {
+                status.innerText = "Searching for BLE... (" + timeLeft + "s)";
+                await new Promise(r => setTimeout(r, 2000));
+            }
+        }
+    }
 
-async function tryWake() {
-  if (!running) return;
+    function onWakeAcknowledged() {
+        clearInterval(timerId);
+        document.getElementById('status').innerHTML = "<b style='color:green'>SUCCESS!</b>";
+        document.getElementById('countdown').style.display = 'none';
+        document.getElementById('stepInstruction').style.display = 'block';
+        document.getElementById('redirectBtn').style.display = 'block'; // Show manual link
+        
+        if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
 
-  try {
-    log('Connecting BLE...');
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    const ch = await service.getCharacteristic(CHAR_UUID);
+        // Open Settings
+        setTimeout(() => {
+            window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
+        }, 1500);
 
-    await ch.writeValue(new Uint8Array([0x01]));
-    log('Wake command sent (0x01)');
-    server.disconnect();
+        // Optional: Automatic background redirect check
+        checkConnection();
+    }
 
-    running = false;
-    showApModal();
+    function checkConnection() {
+        fetch('http://192.168.4.1', { mode: 'no-cors' })
+            .then(() => window.location.href = "http://192.168.4.1")
+            .catch(() => setTimeout(checkConnection, 4000));
+    }
 
-  } catch (e) {
-    retryTimer = setTimeout(tryWake, 3000);
-  }
-}
-
-/* ================= AP DETECTION ================= */
-function showApModal() {
-  apBackdrop.style.display = 'flex';
-  apStatus.textContent = 'Waiting for device Wi-Fi connection…';
-  startApPolling();
-  openWifiSettings();
-}
-
-function startApPolling() {
-  apPollTimer = setInterval(checkAp, 1500);
-  checkAp();
-}
-
-async function checkAp() {
-  try {
-    await fetch(AP_URL, { mode: 'no-cors', cache: 'no-store' });
-    apStatus.textContent = 'Device detected. Opening setup page…';
-    clearInterval(apPollTimer);
-    setTimeout(() => window.location.href = AP_URL, 500);
-  } catch {}
-}
-
-/* ================= BUTTONS ================= */
-btnStart.onclick = async () => {
-  logEl.textContent = '';
-  if (!window.isSecureContext || !navigator.bluetooth) {
-    alert('Use HTTPS and Chrome on Android');
-    return;
-  }
-  await requestDevice();
-};
-
-btnPair.onclick = () => {
-  running = true;
-  startCountdown(WAKE_COUNTDOWN_MS);
-  tryWake();
-};
-
-btnStop.onclick = () => stopAll('User stopped');
-
-btnOpenWifi.onclick = openWifiSettings;
-btnOpenManual.onclick = () => window.location.href = AP_URL;
-btnCloseModal.onclick = () => apBackdrop.style.display = 'none';
-
-/* ================= ANDROID WIFI SETTINGS ================= */
-function openWifiSettings() {
-  window.location.href =
-    'intent:#Intent;action=android.settings.WIFI_SETTINGS;end';
-}
-
-/* ================= VISIBILITY ================= */
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && apBackdrop.style.display === 'flex') {
-    checkAp();
-  }
-});
-
-/* ================= SERVICE WORKER ================= */
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js');
-}
+    function startTimer() {
+        timerId = setInterval(() => {
+            timeLeft--;
+            document.getElementById('countdown').innerText = timeLeft;
+            if (timeLeft <= 0) {
+                clearInterval(timerId);
+                document.getElementById('status').innerText = "Timed out.";
+                document.getElementById('startBtn').style.display = 'block';
+            }
+        }, 1000);
+    }
 </script>
-
 </body>
 </html>
