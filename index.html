@@ -2,134 +2,109 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Auto Wake Pro</title>
+    <title>Auto Wake Pro v2</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f7f6; }
         .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); max-width: 400px; margin: auto; }
         .btn { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; display: block; text-decoration: none; }
         #startBtn { background: #007bff; color: white; }
-        #redirectBtn { background: #28a745; color: white; display: none; } /* Hidden until wake sent */
+        #redirectBtn { background: #28a745; color: white; display: none; } 
         .timer { font-size: 48px; font-weight: bold; color: #dc3545; margin: 20px 0; display: none; }
         #status { font-family: monospace; font-size: 13px; margin: 15px 0; color: #666; min-height: 40px; }
-        .instructions { background: #fff3cd; padding: 15px; border-radius: 10px; font-size: 14px; display: none; border: 1px solid #ffeeba; margin-top: 15px; }
+        .instructions { background: #fff3cd; padding: 15px; border-radius: 10px; font-size: 14px; display: none; border: 1px solid #ffeeba; margin-top: 15px; cursor: pointer; }
     </style>
 </head>
 <body>
+    <div class="card">
+        <h2>Device Controller</h2>
+        <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
+        <div id="countdown" class="timer">75</div>
+        <div id="status">Ready (v2.0)</div>
 
-<div class="card">
-    <h2>Device Controller</h2>
-    
-    <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
-    
-    <div id="countdown" class="timer">75</div>
-    
-    <div id="status">Ready...</div>
+        <div id="stepInstruction" class="instructions" onclick="openSettings()">
+            <b>SIGNAL SENT!</b><br>
+            Tap here to open Wi-Fi Settings,<br>
+            connect to ESP32, then come back.
+        </div>
 
-    <div id="stepInstruction" class="instructions">
-        <b>WAKE SIGNAL SENT!</b><br>
-        1. Connect to ESP32 Wi-Fi in Settings.<br>
-        2. Return here to open the device page.
+        <a id="redirectBtn" href="http://192.168.4.1" class="btn">OPEN DEVICE PAGE</a>
     </div>
 
-    <a id="redirectBtn" href="http://192.168.4.1" class="btn">OPEN DEVICE PAGE (192.168.4.1)</a>
-</div>
+    <script>
+        const S_UUID = '12345678-1234-1234-1234-1234567890ab';
+        const C_UUID = 'abcd1234-1234-1234-1234-1234567890ab';
+        let timeLeft = 75;
+        let timerId = null;
+        let bluetoothDevice = null;
 
-<script>
-    const S_UUID = '12345678-1234-1234-1234-1234567890ab';
-    const C_UUID = 'abcd1234-1234-1234-1234-1234567890ab';
-    
-    let timeLeft = 75;
-    let timerId = null;
-    let bluetoothDevice = null;
-
-    async function initiateWake() {
-        const status = document.getElementById('status');
-        try {
-            bluetoothDevice = await navigator.bluetooth.requestDevice({
-                filters: [{ namePrefix: 'C3' }, { namePrefix: 'nRF' }],
-                optionalServices: [S_UUID]
-            });
-
-            document.getElementById('startBtn').style.display = 'none';
-            document.getElementById('countdown').style.display = 'block';
-            startTimer();
-            attemptConnection();
-        } catch (err) {
-            status.innerText = "Error: " + err.message;
+        function openSettings() {
+            window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
         }
-    }
 
-    async function attemptConnection() {
-        const status = document.getElementById('status');
-        while (timeLeft > 0) {
+        async function initiateWake() {
             try {
-                const server = await bluetoothDevice.gatt.connect();
-                const service = await server.getPrimaryService(S_UUID);
-                const char = await service.getCharacteristic(C_UUID);
-                await char.writeValue(new Uint8Array([0x01]));
-                
-                onWakeAcknowledged();
-                return;
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: 'C3' }, { namePrefix: 'ESP' }, { namePrefix: 'nRF' }],
+                    optionalServices: [S_UUID]
+                });
+                document.getElementById('startBtn').style.display = 'none';
+                document.getElementById('countdown').style.display = 'block';
+                startTimer();
+                attemptConnection();
             } catch (err) {
-                status.innerText = "Searching for BLE... (" + timeLeft + "s)";
-                await new Promise(r => setTimeout(r, 2000));
+                document.getElementById('status').innerText = "Error: " + err.message;
             }
         }
-    }
 
- function onWakeAcknowledged() {
-    clearInterval(timerId);
-    isAcknowledged = true;
-    
-    const status = document.getElementById('status');
-    status.innerHTML = "<b style='color:green'>SIGNAL SENT!</b>";
-    
-    document.getElementById('countdown').style.display = 'none';
-    document.getElementById('stepInstruction').style.display = 'block';
-    document.getElementById('redirectBtn').style.display = 'block'; 
-
-    if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
-
-    // Vibrate to confirm success (good for pocket use)
-    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-
-    // AUTO-OPEN SETTINGS 
-    // If this fails, the user can still click the 'Instructions' area
-    const wifiIntent = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
-    
-    // We try to trigger it, but also make the instruction box clickable as a backup
-    const instructionBox = document.getElementById('stepInstruction');
-    instructionBox.style.cursor = "pointer";
-    instructionBox.onclick = () => { window.location.href = wifiIntent; };
-
-    // Attempt auto-redirect
-    setTimeout(() => {
-        window.location.href = wifiIntent;
-    }, 1000);
-
-    // Start background detection
-    detectWifi();
-}
-
-    function checkConnection() {
-        fetch('http://192.168.4.1', { mode: 'no-cors' })
-            .then(() => window.location.href = "http://192.168.4.1")
-            .catch(() => setTimeout(checkConnection, 4000));
-    }
-
-    function startTimer() {
-        timerId = setInterval(() => {
-            timeLeft--;
-            document.getElementById('countdown').innerText = timeLeft;
-            if (timeLeft <= 0) {
-                clearInterval(timerId);
-                document.getElementById('status').innerText = "Timed out.";
-                document.getElementById('startBtn').style.display = 'block';
+        async function attemptConnection() {
+            while (timeLeft > 0) {
+                try {
+                    const server = await bluetoothDevice.gatt.connect();
+                    const service = await server.getPrimaryService(S_UUID);
+                    const char = await service.getCharacteristic(C_UUID);
+                    await char.writeValue(new Uint8Array([0x01]));
+                    onWakeAcknowledged();
+                    return;
+                } catch (err) {
+                    document.getElementById('status').innerText = "Connecting... (" + timeLeft + "s)";
+                    await new Promise(r => setTimeout(r, 2000));
+                }
             }
-        }, 1000);
-    }
-</script>
+        }
+
+        function onWakeAcknowledged() {
+            clearInterval(timerId);
+            document.getElementById('status').innerHTML = "<b style='color:green'>SUCCESS!</b>";
+            document.getElementById('countdown').style.display = 'none';
+            document.getElementById('stepInstruction').style.display = 'block';
+            document.getElementById('redirectBtn').style.display = 'block';
+            if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
+            
+            // Try to auto-open settings
+            setTimeout(openSettings, 1200);
+            autoDetectWifi();
+        }
+
+        function autoDetectWifi() {
+            // Invisible check to see if we are on the ESP32 network yet
+            fetch('http://192.168.4.1', { mode: 'no-cors' })
+                .then(() => window.location.href = "http://192.168.4.1")
+                .catch(() => setTimeout(autoDetectWifi, 4000));
+        }
+
+        function startTimer() {
+            timerId = setInterval(() => {
+                timeLeft--;
+                document.getElementById('countdown').innerText = timeLeft;
+                if (timeLeft <= 0) { clearInterval(timerId); }
+            }, 1000);
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js?v=2'); // Cache buster
+        }
+    </script>
 </body>
 </html>
-
