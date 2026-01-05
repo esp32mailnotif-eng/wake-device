@@ -1,4 +1,4 @@
-const CACHE_NAME = 'wake-v2.9';
+const CACHE_NAME = 'wake-v3.0';
 const ASSETS = ['index.html', 'manifest.json'];
 self.addEventListener('install', (e) => {
   self.skipWaiting();
