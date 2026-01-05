@@ -2,39 +2,47 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Auto Wake Pro v2.3</title>
+    <title>Auto Wake Pro v2.4</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="manifest.json">
     <script>
+        // Force the new service worker to install immediately
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=2.3');
+            navigator.serviceWorker.register('sw.js?v=2.4').then(reg => {
+                reg.onupdatefound = () => {
+                    const installingWorker = reg.installing;
+                    installingWorker.onstatechange = () => {
+                        if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            window.location.reload();
+                        }
+                    };
+                };
+            });
         }
     </script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f7f6; }
-        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,1); max-width: 400px; margin: auto; }
-        .btn { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; display: block; text-decoration: none; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f7f6; color: #333; }
+        .card { background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); max-width: 400px; margin: auto; border: 1px solid #eee; }
+        .btn { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; display: block; text-decoration: none; transition: transform 0.1s; }
+        .btn:active { transform: scale(0.98); }
         #startBtn { background: #007bff; color: white; }
         #redirectBtn { background: #28a745; color: white; display: none; } 
-        #status { font-family: monospace; font-size: 14px; margin: 15px 0; color: #333; font-weight: bold; }
-        
-        /* High-visibility fallback button */
-        .instructions { background: #ff5722; color: white; padding: 25px; border-radius: 15px; font-size: 18px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        .manual-hint { font-size: 12px; color: #666; margin-top: 5px; display: none; }
+        #status { font-family: monospace; font-size: 14px; margin: 15px 0; color: #555; font-weight: bold; background: #eee; padding: 10px; border-radius: 8px; }
+        .instructions { background: #ff5722; color: white; padding: 25px; border-radius: 15px; font-size: 18px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(255, 87, 34, 0.4); }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>System Wake</h2>
-        <button id="startBtn" class="btn" onclick="initiateWake()">1. START WAKE</button>
-        <div id="status">Status: Ready (v2.3)</div>
+        <h2 style="margin-top:0">Device Wake</h2>
+        <button id="startBtn" class="btn" onclick="initiateWake()">1. START WAKE PULSE</button>
+        <div id="status">Ready (v2.4)</div>
 
         <div id="stepInstruction" class="instructions" onclick="forceOpenSettings()">
-            STEP 2:<br>OPEN WI-FI SETTINGS
+            2. OPEN WI-FI LIST<br>
+            <small style="font-size:12px; font-weight:normal;">(Tap if settings don't open)</small>
         </div>
-        <div id="manualHint" class="manual-hint">If button fails: Swipe down phone tray > Long-press Wi-Fi icon</div>
 
-        <a id="redirectBtn" href="http://192.168.4.1" class="btn">3. OPEN DEVICE PAGE</a>
+        <a id="redirectBtn" href="http://192.168.4.1" class="btn">3. GO TO DEVICE (192.168.4.1)</a>
     </div>
 
     <script>
@@ -43,57 +51,65 @@
         let bluetoothDevice = null;
 
         function forceOpenSettings() {
-            // Attempt 1: Standard Intent
+            // Android 15 / Modern Style
             window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
             
-            // Attempt 2: Direct Protocol (Works on some newer Androids)
+            // Android 12 / Samsung Specific Backup
             setTimeout(() => {
-                window.location.href = "app-settings:wifi";
-            }, 500);
+                window.location.href = "intent:#Intent;action=android.net.wifi.PICK_WIFI_NETWORK;end";
+            }, 300);
 
-            // Attempt 3: Generic Settings
+            // Generic Settings Backup
             setTimeout(() => {
                 window.location.href = "intent:#Intent;action=android.settings.SETTINGS;end";
-            }, 1000);
+            }, 600);
         }
 
         async function initiateWake() {
+            const status = document.getElementById('status');
             try {
                 bluetoothDevice = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true, 
                     optionalServices: [S_UUID]
                 });
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('status').innerText = "Connecting...";
+                status.innerText = "Connecting to BLE...";
                 
                 const server = await bluetoothDevice.gatt.connect();
                 const service = await server.getPrimaryService(S_UUID);
                 const char = await service.getCharacteristic(C_UUID);
+                
+                status.innerText = "Sending 0x01 Wake...";
                 await char.writeValue(new Uint8Array([0x01]));
                 
                 onWakeAcknowledged();
             } catch (err) {
-                document.getElementById('status').innerText = "Error: " + err.message;
+                status.innerText = "Error: " + err.message;
             }
         }
 
         function onWakeAcknowledged() {
-            document.getElementById('status').innerHTML = "SIGNAL SENT!";
+            document.getElementById('status').innerHTML = "✅ SIGNAL DELIVERED";
+            document.getElementById('startBtn').style.display = 'none';
             document.getElementById('stepInstruction').style.display = 'block';
-            document.getElementById('manualHint').style.display = 'block';
             document.getElementById('redirectBtn').style.display = 'block';
             
             if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
 
-            // Auto-detect connection
+            // Automatic trigger for Android 15, manual backup for Android 12
+            forceOpenSettings();
             autoDetectWifi();
         }
 
         function autoDetectWifi() {
-            fetch('http://192.168.4.1', { mode: 'no-cors' })
-                .then(() => window.location.href = "http://192.168.4.1")
-                .catch(() => setTimeout(autoDetectWifi, 4000));
+            // Quietly check if we've switched to the ESP32 network
+            fetch('http://192.168.4.1/favicon.ico', { mode: 'no-cors' })
+                .then(() => {
+                    window.location.href = "http://192.168.4.1";
+                })
+                .catch(() => {
+                    setTimeout(autoDetectWifi, 3000);
+                });
         }
     </script>
 </body>
