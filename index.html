@@ -78,23 +78,39 @@
         }
     }
 
-    function onWakeAcknowledged() {
-        clearInterval(timerId);
-        document.getElementById('status').innerHTML = "<b style='color:green'>SUCCESS!</b>";
-        document.getElementById('countdown').style.display = 'none';
-        document.getElementById('stepInstruction').style.display = 'block';
-        document.getElementById('redirectBtn').style.display = 'block'; // Show manual link
-        
-        if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
+ function onWakeAcknowledged() {
+    clearInterval(timerId);
+    isAcknowledged = true;
+    
+    const status = document.getElementById('status');
+    status.innerHTML = "<b style='color:green'>SIGNAL SENT!</b>";
+    
+    document.getElementById('countdown').style.display = 'none';
+    document.getElementById('stepInstruction').style.display = 'block';
+    document.getElementById('redirectBtn').style.display = 'block'; 
 
-        // Open Settings
-        setTimeout(() => {
-            window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
-        }, 1500);
+    if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
 
-        // Optional: Automatic background redirect check
-        checkConnection();
-    }
+    // Vibrate to confirm success (good for pocket use)
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+
+    // AUTO-OPEN SETTINGS 
+    // If this fails, the user can still click the 'Instructions' area
+    const wifiIntent = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
+    
+    // We try to trigger it, but also make the instruction box clickable as a backup
+    const instructionBox = document.getElementById('stepInstruction');
+    instructionBox.style.cursor = "pointer";
+    instructionBox.onclick = () => { window.location.href = wifiIntent; };
+
+    // Attempt auto-redirect
+    setTimeout(() => {
+        window.location.href = wifiIntent;
+    }, 1000);
+
+    // Start background detection
+    detectWifi();
+}
 
     function checkConnection() {
         fetch('http://192.168.4.1', { mode: 'no-cors' })
@@ -116,3 +132,4 @@
 </script>
 </body>
 </html>
+
