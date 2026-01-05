@@ -1,6 +1,6 @@
 {
-  "name": "C3 Auto Wake",
-  "short_name": "C3 Wake",
+  "name": "Device Setup",
+  "short_name": "Setup",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
