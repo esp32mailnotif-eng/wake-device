@@ -42,21 +42,26 @@
         function openSettings() {
             window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
         }
+async function initiateWake() {
+    const status = document.getElementById('status');
+    try {
+        status.innerText = "Opening Bluetooth list...";
+        
+        // This version accepts ALL devices nearby
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [S_UUID] // Still need this to talk to the service
+        });
 
-        async function initiateWake() {
-            try {
-                bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'C3' }, { namePrefix: 'ESP' }, { namePrefix: 'nRF' }],
-                    optionalServices: [S_UUID]
-                });
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('countdown').style.display = 'block';
-                startTimer();
-                attemptConnection();
-            } catch (err) {
-                document.getElementById('status').innerText = "Error: " + err.message;
-            }
-        }
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('countdown').style.display = 'block';
+        startTimer();
+        attemptConnection();
+    } catch (err) {
+        status.innerText = "Error: " + err.message;
+        // If it says "User cancelled", you just closed the box without picking.
+    }
+}
 
         async function attemptConnection() {
             while (timeLeft > 0) {
@@ -108,3 +113,4 @@
     </script>
 </body>
 </html>
+
