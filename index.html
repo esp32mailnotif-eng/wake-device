@@ -2,12 +2,12 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Auto Wake Pro v2.7</title>
+    <title>Auto Wake Pro v2.8</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="manifest.json">
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=2.7');
+            navigator.serviceWorker.register('sw.js?v=2.8');
         }
     </script>
     <style>
@@ -25,14 +25,13 @@
     <div class="card">
         <h2>System Wake</h2>
         <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
-        
         <div id="countdown" class="timer">75</div>
-        <div id="status">Ready (v2.7)</div>
+        <div id="status">Ready (v2.8)</div>
 
         <div id="stepInstruction" class="instructions" onclick="forceOpenSettings()">
             WAKE SENT! ⚡<br>
-            <span style="font-size: 22px;">TAP HERE FOR WI-FI</span><br>
-            <small style="font-size:12px; font-weight:normal; opacity:0.8;">(Android 12: Tap firmly once)</small>
+            <span style="font-size: 22px;">OPEN WI-FI LIST</span><br>
+            <small style="font-size:12px; font-weight:normal; opacity:0.8;">(Tap to connect to ESP32)</small>
         </div>
 
         <a id="redirectBtn" href="http://192.168.4.1" class="btn">GO TO DEVICE (192.168.4.1)</a>
@@ -46,16 +45,17 @@
         let bluetoothDevice = null;
 
         function forceOpenSettings() {
-            // Android 12 is sensitive. We fire ONE clean intent that points 
-            // specifically to the wireless settings activity.
-            window.location.href = "intent:#Intent;action=android.settings.WIRELESS_SETTINGS;end";
-            
-            // If that fails after 1 second, try the generic one
+            // FIX FOR ANDROID 12: Use the exact 'Action' string for Settings.
+            // This prevents the phone from trying to do a Google Search.
+            const intent = "intent:#Intent;action=android.settings.WIFI_SETTINGS;window_flags=0x4000000;end";
+            window.location.href = intent;
+
+            // FALLBACK FOR ANDROID 12 (Direct Activity call)
             setTimeout(() => {
                 if (document.visibilityState === 'visible') {
-                    window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
+                    window.location.href = "intent:#Intent;action=android.net.wifi.PICK_WIFI_NETWORK;end";
                 }
-            }, 1000);
+            }, 800);
         }
 
         async function initiateWake() {
@@ -91,15 +91,12 @@
 
         function onWakeAcknowledged() {
             clearInterval(timerId);
-            document.getElementById('status').innerHTML = "✅ SUCCESS";
+            document.getElementById('status').innerHTML = "✅ SIGNAL SENT";
             document.getElementById('countdown').style.display = 'none';
             document.getElementById('stepInstruction').style.display = 'block';
             document.getElementById('redirectBtn').style.display = 'block';
-            
             if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
             if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-            
-            // WE DO NOT AUTO-JUMP HERE. We wait for the user to tap the orange box.
             autoDetectWifi();
         }
 
