@@ -1,10 +1,19 @@
-const CACHE = 'device-setup-v1';
+const CACHE_NAME = 'wake-v1';
+const ASSETS = [
+  'index.html',
+  'manifest.json'
+];
 
-self.addEventListener('install', e => {
+// Install Service Worker
+self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE).then(c =>
-      c.addAll(['./', './index.html', './manifest.webmanifest'])
-    )
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
-  self.skipWaiting();
+});
+
+// Fetch Assets from Cache
+self.addEventListener('fetch', (e) => {
+  e.respondWith(
+    caches.match(e.request).then((response) => response || fetch(e.request))
+  );
 });
