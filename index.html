@@ -2,12 +2,12 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Auto Wake Pro v2.8</title>
+    <title>Auto Wake Pro v2.9</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="manifest.json">
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=2.8');
+            navigator.serviceWorker.register('sw.js?v=2.9');
         }
     </script>
     <style>
@@ -18,20 +18,25 @@
         #redirectBtn { background: #28a745; color: white; display: none; } 
         .timer { font-size: 52px; font-weight: bold; color: #dc3545; margin: 15px 0; display: none; }
         #status { font-family: monospace; font-size: 14px; margin: 10px 0; color: #666; font-weight: bold; }
-        .instructions { background: #ff5722; color: white; padding: 25px; border-radius: 15px; font-size: 18px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(255, 87, 34, 0.4); border: 3px solid #fff; }
+        .instructions { background: #ff5722; color: white; padding: 25px; border-radius: 15px; font-size: 18px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(255, 87, 34, 0.4); }
+        .manual-box { background: #eee; padding: 10px; border-radius: 10px; font-size: 13px; color: #444; margin-top: 10px; display: none; }
     </style>
 </head>
 <body>
     <div class="card">
         <h2>System Wake</h2>
         <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
+        
         <div id="countdown" class="timer">75</div>
-        <div id="status">Ready (v2.8)</div>
+        <div id="status">Ready (v2.9)</div>
 
         <div id="stepInstruction" class="instructions" onclick="forceOpenSettings()">
             WAKE SENT! ⚡<br>
-            <span style="font-size: 22px;">OPEN WI-FI LIST</span><br>
-            <small style="font-size:12px; font-weight:normal; opacity:0.8;">(Tap to connect to ESP32)</small>
+            <span style="font-size: 20px;">OPEN WI-FI LIST</span>
+        </div>
+
+        <div id="manualBox" class="manual-box">
+            <b>Android 12:</b> If button fails, swipe down and long-press your Wi-Fi icon manually.
         </div>
 
         <a id="redirectBtn" href="http://192.168.4.1" class="btn">GO TO DEVICE (192.168.4.1)</a>
@@ -45,17 +50,8 @@
         let bluetoothDevice = null;
 
         function forceOpenSettings() {
-            // FIX FOR ANDROID 12: Use the exact 'Action' string for Settings.
-            // This prevents the phone from trying to do a Google Search.
-            const intent = "intent:#Intent;action=android.settings.WIFI_SETTINGS;window_flags=0x4000000;end";
-            window.location.href = intent;
-
-            // FALLBACK FOR ANDROID 12 (Direct Activity call)
-            setTimeout(() => {
-                if (document.visibilityState === 'visible') {
-                    window.location.href = "intent:#Intent;action=android.net.wifi.PICK_WIFI_NETWORK;end";
-                }
-            }, 800);
+            // Restore the version that worked for Android 15
+            window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
         }
 
         async function initiateWake() {
@@ -64,6 +60,7 @@
                     acceptAllDevices: true, 
                     optionalServices: [S_UUID]
                 });
+
                 document.getElementById('startBtn').style.display = 'none';
                 document.getElementById('countdown').style.display = 'block';
                 startTimer();
@@ -94,9 +91,14 @@
             document.getElementById('status').innerHTML = "✅ SIGNAL SENT";
             document.getElementById('countdown').style.display = 'none';
             document.getElementById('stepInstruction').style.display = 'block';
+            document.getElementById('manualBox').style.display = 'block';
             document.getElementById('redirectBtn').style.display = 'block';
+            
             if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
             if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            
+            // Auto-jump for Android 15
+            setTimeout(forceOpenSettings, 500);
             autoDetectWifi();
         }
 
