@@ -1,126 +1,76 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <title>Auto Wake Pro v3.0</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3 Wake Pro</title>
     <link rel="manifest" href="manifest.json">
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=3.0');
-        }
-    </script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f4f7f6; color: #333; }
-        .card { background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); max-width: 400px; margin: auto; }
-        .btn { width: 100%; padding: 20px; font-size: 18px; font-weight: bold; border: none; border-radius: 12px; cursor: pointer; margin: 10px 0; display: block; text-decoration: none; }
-        #startBtn { background: #007bff; color: white; }
-        #redirectBtn { background: #28a745; color: white; display: none; } 
-        .timer { font-size: 52px; font-weight: bold; color: #dc3545; margin: 15px 0; display: none; }
-        #status { font-family: monospace; font-size: 14px; margin: 10px 0; color: #666; font-weight: bold; }
-        
-        /* High visibility for Huawei users */
-        .instructions { background: #ff5722; color: white; padding: 25px; border-radius: 15px; font-size: 18px; display: none; margin-top: 15px; cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(255, 87, 34, 0.4); }
-        .huawei-note { background: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; font-size: 13px; margin-top: 10px; display: none; border: 1px solid #ffeeba; }
+        body { font-family: -apple-system, sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
+        .btn { background: #3b82f6; border: none; padding: 20px; border-radius: 12px; color: white; font-size: 1.2rem; width: 100%; margin-bottom: 15px; cursor: pointer; }
+        .btn-pair { background: #10b981; }
+        #status { font-size: 0.9rem; color: #94a3b8; margin-top: 20px; border: 1px solid #334155; padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h2>System Wake</h2>
-        <button id="startBtn" class="btn" onclick="initiateWake()">START AUTO WAKE</button>
-        
-        <div id="countdown" class="timer">75</div>
-        <div id="status">Ready (v3.0)</div>
-
-        <div id="stepInstruction" class="instructions" onclick="forceOpenSettings()">
-            WAKE SENT! ⚡<br>
-            <span style="font-size: 20px;">OPEN WI-FI LIST</span>
+    <h1>S3 Wake Pro <small>v2.0</small></h1>
+    
+    <div id="device-list">
         </div>
 
-        <div id="huaweiNote" class="huawei-note">
-            <b>Huawei/EMUI detected:</b> If the button didn't open settings, please swipe down your notification tray and long-press Wi-Fi.
-        </div>
-
-        <a id="redirectBtn" href="http://192.168.4.1" class="btn">GO TO DEVICE (192.168.4.1)</a>
-    </div>
+    <button class="btn btn-pair" onclick="pairNew()">+ Pair New Device</button>
+    
+    <div id="status">Ready.</div>
 
     <script>
-        const S_UUID = '12345678-1234-1234-1234-1234567890ab';
-        const C_UUID = 'abcd1234-1234-1234-1234-1234567890ab';
-        let timeLeft = 75;
-        let timerId = null;
-        let bluetoothDevice = null;
+        const S_UUID = "12345678-1234-1234-1234-1234567890ab";
+        const C_UUID = "abcd1234-1234-1234-1234-1234567890ab";
 
-        function forceOpenSettings() {
-            // Standard Android Intent
-            window.location.href = "intent:#Intent;action=android.settings.WIFI_SETTINGS;end";
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
         }
 
-        async function initiateWake() {
+        async function refreshList() {
+            if (!navigator.bluetooth.getDevices) {
+                document.getElementById('status').innerText = "Update Chrome/Enable Flags";
+                return;
+            }
+            const devices = await navigator.bluetooth.getDevices();
+            const list = document.getElementById('device-list');
+            list.innerHTML = "";
+            devices.forEach(dev => {
+                const b = document.createElement('button');
+                b.className = "btn";
+                b.innerText = "Wake " + (dev.name || "C3_WAKE");
+                b.onclick = () => connect(dev);
+                list.appendChild(b);
+            });
+        }
+
+        async function pairNew() {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ services: [S_UUID] }]
+            });
+            await connect(device);
+            refreshList();
+        }
+
+        async function connect(device) {
             try {
-                bluetoothDevice = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true, 
-                    optionalServices: [S_UUID]
-                });
-
-                document.getElementById('startBtn').style.display = 'none';
-                document.getElementById('countdown').style.display = 'block';
-                startTimer();
-                attemptConnection();
-            } catch (err) {
-                document.getElementById('status').innerText = "Error: " + err.message;
+                document.getElementById('status').innerText = "Waiting for 600ms Spike...";
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(S_UUID);
+                const char = await service.getCharacteristic(C_UUID);
+                await char.writeValue(new Uint8Array([0x01]));
+                document.getElementById('status').innerText = "SENT: WAKE COMMAND";
+                device.gatt.disconnect();
+            } catch (e) {
+                document.getElementById('status').innerText = "Retry: S3 is in Deep Sleep.";
             }
         }
 
-        async function attemptConnection() {
-            while (timeLeft > 0) {
-                try {
-                    const server = await bluetoothDevice.gatt.connect();
-                    const service = await server.getPrimaryService(S_UUID);
-                    const char = await service.getCharacteristic(C_UUID);
-                    await char.writeValue(new Uint8Array([0x01]));
-                    onWakeAcknowledged();
-                    return;
-                } catch (err) {
-                    document.getElementById('status').innerText = "Connecting... (" + timeLeft + "s)";
-                    await new Promise(r => setTimeout(r, 2000));
-                }
-            }
-        }
-
-        function onWakeAcknowledged() {
-            clearInterval(timerId);
-            document.getElementById('status').innerHTML = "✅ SIGNAL SENT";
-            document.getElementById('countdown').style.display = 'none';
-            document.getElementById('stepInstruction').style.display = 'block';
-            document.getElementById('huaweiNote').style.display = 'block'; // Always show for safety
-            document.getElementById('redirectBtn').style.display = 'block';
-            
-            if (bluetoothDevice) bluetoothDevice.gatt.disconnect();
-            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-            
-            // Auto-jump (Android 15 likes this)
-            setTimeout(forceOpenSettings, 500);
-            autoDetectWifi();
-        }
-
-        function autoDetectWifi() {
-            fetch('http://192.168.4.1/favicon.ico', { mode: 'no-cors' })
-                .then(() => { window.location.href = "http://192.168.4.1"; })
-                .catch(() => { setTimeout(autoDetectWifi, 3000); });
-        }
-
-        function startTimer() {
-            timerId = setInterval(() => {
-                timeLeft--;
-                document.getElementById('countdown').innerText = timeLeft;
-                if (timeLeft <= 0) {
-                    clearInterval(timerId);
-                    document.getElementById('status').innerText = "Timeout.";
-                    document.getElementById('startBtn').style.display = 'block';
-                }
-            }, 1000);
-        }
+        window.onload = refreshList;
     </script>
 </body>
 </html>
