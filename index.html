@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S3 Wake Pro v2.9.1</title>
+    <title>S3 Wake Pro v2.9.2</title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root { --bg: #0f172a; --accent: #3b82f6; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: white; text-align: center; padding: 15px; min-height: 100vh; }
         .card { background: #1e293b; padding: 20px; border-radius: 16px; max-width: 400px; margin: auto; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-        .btn { background: var(--accent); border: none; padding: 18px; border-radius: 12px; color: white; font-size: 1.1rem; width: 100%; margin: 10px 0; cursor: pointer; font-weight: 600; text-decoration: none; display: block; transition: 0.2s; }
+        .btn { background: var(--accent); border: none; padding: 18px; border-radius: 12px; color: white; font-size: 1.1rem; width: 100%; margin: 10px 0; cursor: pointer; font-weight: 600; text-decoration: none; display: block; }
         .btn-searching { background: var(--warn) !important; animation: pulse 1.5s infinite; }
-        .success-flash { background: var(--success) !important; scale: 1.02; }
-        #status { font-size: 0.85rem; color: #94a3b8; margin: 15px 0; padding: 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; min-height: 100px; }
+        .success-flash { background: var(--success) !important; }
+        #status { font-size: 0.85rem; color: #94a3b8; margin: 15px 0; padding: 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; min-height: 120px; }
         .timer-row { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #1e293b; }
         .timer-val { font-family: monospace; font-size: 1rem; color: var(--accent); font-weight: bold; }
+        .attempt-tag { font-size: 0.7rem; background: #334155; padding: 2px 6px; border-radius: 4px; color: #fff; }
         .flags-box { background: #020617; border: 1px solid var(--danger); border-radius: 8px; padding: 10px; margin-top: 20px; text-align: left; font-size: 0.8rem; }
         .flags-box code { color: var(--warn); display: block; margin: 5px 0; }
         .heartbeat { width: 10px; height: 10px; background: var(--accent); border-radius: 50%; display: inline-block; margin-right: 8px; }
@@ -26,22 +27,15 @@
 <body>
 
     <div class="card">
-        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.9.1</small></h2>
-        
+        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.9.2</small></h2>
         <div id="device-list"></div>
         <button class="btn" style="background:transparent; border:2px dashed #444;" onclick="pairNew()">+ Pair New Device</button>
         
         <div id="status">
             <div id="msg">Ready to Wake</div>
-            
-            <div class="timer-row">
-                <span>Radio Link (Handshake):</span>
-                <span id="radio-timer" class="timer-val">0.000s</span>
-            </div>
-            <div class="timer-row">
-                <span>Total User Wait:</span>
-                <span id="total-timer" class="timer-val">0.000s</span>
-            </div>
+            <div class="timer-row"><span>Radio Link:</span><span id="radio-timer" class="timer-val">0.000s</span></div>
+            <div class="timer-row"><span>Total Wait:</span><span id="total-timer" class="timer-val">0.000s</span></div>
+            <div class="timer-row"><span>Last Success:</span><span id="attempt-info" class="timer-val">--</span></div>
         </div>
 
         <hr style="border: 0; border-top: 1px solid #334155; margin: 15px 0;">
@@ -49,12 +43,10 @@
         <a href="http://192.168.4.1" target="_blank" class="btn" style="background:#6366f1;">🌐 Open ESP32 Page</a>
         
         <div id="cancel-zone"></div>
-
         <div class="flags-box">
             <strong style="color: var(--danger)">REQUIRED CHROME FLAGS:</strong>
             <code>1. chrome://flags/#enable-experimental-web-platform-features</code>
             <code>2. chrome://flags/#enable-web-bluetooth-new-permissions-backend</code>
-            <p style="margin-top:5px; color:#64748b; font-size:0.75rem;">Must be ENABLED for persistence after phone restart.</p>
         </div>
     </div>
 
@@ -73,10 +65,7 @@
                     const b = document.createElement('button');
                     b.className = "btn";
                     b.innerText = "Wake " + (dev.name || "ESP32");
-                    b.onclick = () => {
-                        globalStartTime = performance.now();
-                        startHunt(dev, b);
-                    };
+                    b.onclick = () => { globalStartTime = performance.now(); startHunt(dev, b); };
                     list.appendChild(b);
                 });
                 document.getElementById('msg').innerText = "Memory Loaded. Ready.";
@@ -87,19 +76,15 @@
             if(isHunting) return;
             isHunting = true;
             btn.classList.add('btn-searching');
-            document.getElementById('cancel-zone').innerHTML = `<button class="btn" style="background:var(--danger)" onclick="location.reload()">STOP HUNT</button>`;
-            document.getElementById('msg').innerHTML = `<span class="heartbeat blink"></span>Watching for Spike...`;
-
+            document.getElementById('cancel-zone').innerHTML = `<button class="btn" style="background:var(--danger)" onclick="location.reload()">STOP</button>`;
+            
             try {
-                // Persistent watch for reboots
                 await device.watchAdvertisements();
-                
                 device.addEventListener('advertisementreceived', async (event) => {
                     spikeStartTime = performance.now();
-                    document.getElementById('msg').innerText = "🎯 Spike Caught! Forcing Link...";
                     
-                    // THE "HAMMER" LOOP: Retries 3 times in 50ms intervals
-                    for(let i=0; i<3; i++) {
+                    for(let i=1; i<=3; i++) {
+                        document.getElementById('msg').innerHTML = `<span class="heartbeat blink"></span>Attempt #${i}...`;
                         try {
                             const server = await device.gatt.connect();
                             const service = await server.getPrimaryService(S_UUID);
@@ -109,28 +94,24 @@
                             const now = performance.now();
                             document.getElementById('radio-timer').innerText = ((now - spikeStartTime) / 1000).toFixed(3) + "s";
                             document.getElementById('total-timer').innerText = ((now - globalStartTime) / 1000).toFixed(3) + "s";
-                            document.getElementById('msg').innerHTML = "<span style='color:var(--success)'>✅ COMMAND DELIVERED</span>";
+                            document.getElementById('attempt-info').innerText = "Try #" + i;
+                            document.getElementById('msg').innerHTML = "<span style='color:var(--success)'>✅ DELIVERED</span>";
                             
                             isHunting = false;
                             btn.classList.replace('btn-searching', 'success-flash');
-                            btn.innerText = "SUCCESS!";
                             if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
-                            setTimeout(() => location.reload(), 8000);
+                            setTimeout(() => location.reload(), 10000);
                             return;
                         } catch (err) {
-                            console.log(`Attempt ${i+1} failed, retrying quickly...`);
-                            await new Promise(r => setTimeout(r, 50));
+                            await new Promise(r => setTimeout(r, 60));
                         }
                     }
                 });
-            } catch (e) { document.getElementById('msg').innerText = "Error: Connection Failed."; }
+            } catch (e) { }
         }
 
         async function pairNew() {
-            try {
-                await navigator.bluetooth.requestDevice({ filters: [{ services: [S_UUID] }] });
-                location.reload(); 
-            } catch (e) { }
+            try { await navigator.bluetooth.requestDevice({ filters: [{ services: [S_UUID] }] }); location.reload(); } catch (e) { }
         }
     </script>
 </body>
