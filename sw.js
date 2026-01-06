@@ -1,4 +1,4 @@
-const cacheName = 's3-v2.9-dual-timer';
+const cacheName = 's3-v2.9.1-hammer';
 const assets = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
