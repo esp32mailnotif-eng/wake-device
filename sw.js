@@ -1,4 +1,4 @@
-const cacheName = 's3-v2.9.2-diag';
+const cacheName = 's3-v2.9.3-ultra';
 const assets = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -7,11 +7,13 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => {
-    return Promise.all(keys.map((k) => {
-      if (k !== cacheName) return caches.delete(k);
-    }));
-  }));
+  e.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(keys.map((k) => {
+        if (k !== cacheName) return caches.delete(k);
+      }));
+    })
+  );
   return self.clients.claim();
 });
 
