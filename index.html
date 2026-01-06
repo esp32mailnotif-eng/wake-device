@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S3 Wake Pro v2.9.2</title>
+    <title>S3 Wake Pro v2.9.3</title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root { --bg: #0f172a; --accent: #3b82f6; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
@@ -15,7 +15,6 @@
         #status { font-size: 0.85rem; color: #94a3b8; margin: 15px 0; padding: 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; min-height: 120px; }
         .timer-row { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #1e293b; }
         .timer-val { font-family: monospace; font-size: 1rem; color: var(--accent); font-weight: bold; }
-        .attempt-tag { font-size: 0.7rem; background: #334155; padding: 2px 6px; border-radius: 4px; color: #fff; }
         .flags-box { background: #020617; border: 1px solid var(--danger); border-radius: 8px; padding: 10px; margin-top: 20px; text-align: left; font-size: 0.8rem; }
         .flags-box code { color: var(--warn); display: block; margin: 5px 0; }
         .heartbeat { width: 10px; height: 10px; background: var(--accent); border-radius: 50%; display: inline-block; margin-right: 8px; }
@@ -27,7 +26,7 @@
 <body>
 
     <div class="card">
-        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.9.2</small></h2>
+        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.9.3</small></h2>
         <div id="device-list"></div>
         <button class="btn" style="background:transparent; border:2px dashed #444;" onclick="pairNew()">+ Pair New Device</button>
         
@@ -83,7 +82,7 @@
                 device.addEventListener('advertisementreceived', async (event) => {
                     spikeStartTime = performance.now();
                     
-                    for(let i=1; i<=3; i++) {
+                    for(let i=1; i<=5; i++) {
                         document.getElementById('msg').innerHTML = `<span class="heartbeat blink"></span>Attempt #${i}...`;
                         try {
                             const server = await device.gatt.connect();
@@ -103,7 +102,7 @@
                             setTimeout(() => location.reload(), 10000);
                             return;
                         } catch (err) {
-                            await new Promise(r => setTimeout(r, 60));
+                            await new Promise(r => setTimeout(r, 30));
                         }
                     }
                 });
