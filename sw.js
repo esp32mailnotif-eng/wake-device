@@ -1,4 +1,4 @@
-const cacheName = 's3-v2.1-final'; // Changed name to force update
+const cacheName = 's3-v2.2-stable'; 
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
