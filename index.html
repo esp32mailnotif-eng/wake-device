@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S3 Wake Pro v2.9</title>
+    <title>S3 Wake Pro v2.9.1</title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root { --bg: #0f172a; --accent: #3b82f6; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
@@ -26,7 +26,7 @@
 <body>
 
     <div class="card">
-        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.9</small></h2>
+        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.9.1</small></h2>
         
         <div id="device-list"></div>
         <button class="btn" style="background:transparent; border:2px dashed #444;" onclick="pairNew()">+ Pair New Device</button>
@@ -35,17 +35,17 @@
             <div id="msg">Ready to Wake</div>
             
             <div class="timer-row">
-                <span>Radio Link:</span>
+                <span>Radio Link (Handshake):</span>
                 <span id="radio-timer" class="timer-val">0.000s</span>
             </div>
             <div class="timer-row">
-                <span>Total Wait:</span>
+                <span>Total User Wait:</span>
                 <span id="total-timer" class="timer-val">0.000s</span>
             </div>
         </div>
 
         <hr style="border: 0; border-top: 1px solid #334155; margin: 15px 0;">
-        <a href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" class="btn" style="background:#475569; font-size:0.9rem;">📶 WiFi Settings</a>
+        <a href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" class="btn" style="background:#475569; font-size:0.9rem;">📶 Android WiFi List</a>
         <a href="http://192.168.4.1" target="_blank" class="btn" style="background:#6366f1;">🌐 Open ESP32 Page</a>
         
         <div id="cancel-zone"></div>
@@ -54,6 +54,7 @@
             <strong style="color: var(--danger)">REQUIRED CHROME FLAGS:</strong>
             <code>1. chrome://flags/#enable-experimental-web-platform-features</code>
             <code>2. chrome://flags/#enable-web-bluetooth-new-permissions-backend</code>
+            <p style="margin-top:5px; color:#64748b; font-size:0.75rem;">Must be ENABLED for persistence after phone restart.</p>
         </div>
     </div>
 
@@ -61,8 +62,7 @@
         const S_UUID = "12345678-1234-1234-1234-1234567890ab";
         const C_UUID = "abcd1234-1234-1234-1234-1234567890ab";
         let isHunting = false;
-        let globalStartTime; // When button is pressed
-        let spikeStartTime;  // When device is detected
+        let globalStartTime, spikeStartTime;
 
         window.onload = async () => {
             try {
@@ -91,12 +91,14 @@
             document.getElementById('msg').innerHTML = `<span class="heartbeat blink"></span>Watching for Spike...`;
 
             try {
+                // Persistent watch for reboots
                 await device.watchAdvertisements();
                 
                 device.addEventListener('advertisementreceived', async (event) => {
-                    spikeStartTime = performance.now(); // Start Radio timer
-                    document.getElementById('msg').innerText = "🎯 Spike Caught! Linking...";
+                    spikeStartTime = performance.now();
+                    document.getElementById('msg').innerText = "🎯 Spike Caught! Forcing Link...";
                     
+                    // THE "HAMMER" LOOP: Retries 3 times in 50ms intervals
                     for(let i=0; i<3; i++) {
                         try {
                             const server = await device.gatt.connect();
@@ -104,23 +106,19 @@
                             const char = await service.getCharacteristic(C_UUID);
                             await char.writeValue(new Uint8Array([0x01]));
 
-                            // FINAL CALCULATIONS
                             const now = performance.now();
-                            const radioTime = ((now - spikeStartTime) / 1000).toFixed(3);
-                            const totalTime = ((now - globalStartTime) / 1000).toFixed(3);
+                            document.getElementById('radio-timer').innerText = ((now - spikeStartTime) / 1000).toFixed(3) + "s";
+                            document.getElementById('total-timer').innerText = ((now - globalStartTime) / 1000).toFixed(3) + "s";
+                            document.getElementById('msg').innerHTML = "<span style='color:var(--success)'>✅ COMMAND DELIVERED</span>";
                             
                             isHunting = false;
-                            document.getElementById('radio-timer').innerText = radioTime + "s";
-                            document.getElementById('total-timer').innerText = totalTime + "s";
-                            document.getElementById('msg').innerHTML = "<span style='color:var(--success)'>✅ SUCCESS!</span>";
-                            
                             btn.classList.replace('btn-searching', 'success-flash');
-                            btn.innerText = "WAKE SUCCESS!";
-                            
+                            btn.innerText = "SUCCESS!";
                             if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
                             setTimeout(() => location.reload(), 8000);
                             return;
                         } catch (err) {
+                            console.log(`Attempt ${i+1} failed, retrying quickly...`);
                             await new Promise(r => setTimeout(r, 50));
                         }
                     }
