@@ -1,4 +1,4 @@
-const cacheName = 's3-v2.3-final-stable'; 
+const cacheName = 's3-v2.5-heartbeat'; 
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
