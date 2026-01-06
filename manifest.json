@@ -1,15 +1,24 @@
 {
   "name": "S3 Wake Pro",
-  "short_name": "S3Wake",
-  "start_url": "index.html",
+  "short_name": "S3 Wake",
+  "description": "High-Performance BLE Remote Wake for ESP32-C3",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#3b82f6",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/100/100084.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/3159/3159461.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3159/3159461.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
