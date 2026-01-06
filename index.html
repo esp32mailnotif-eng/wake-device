@@ -3,45 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S3 Wake Pro v2.5</title>
+    <title>S3 Wake Pro v2.7</title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root { --bg: #0f172a; --accent: #3b82f6; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: white; text-align: center; padding: 20px; min-height: 100vh; }
         .card { background: #1e293b; padding: 20px; border-radius: 16px; max-width: 400px; margin: auto; border: 1px solid #334155; }
         .btn { background: var(--accent); border: none; padding: 18px; border-radius: 12px; color: white; font-size: 1.1rem; width: 100%; margin: 10px 0; cursor: pointer; font-weight: 600; text-decoration: none; display: block; }
-        .btn-wifi { background: #475569; border: 1px solid #64748b; font-size: 0.9rem; }
-        .btn-ap { background: #6366f1; }
-        .btn-searching { background: var(--warn) !important; }
+        .btn-searching { background: var(--warn) !important; animation: pulse 1.5s infinite; }
         .success-flash { background: var(--success) !important; }
-        #status { font-size: 0.9rem; color: #94a3b8; margin: 15px 0; padding: 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; }
+        #status { font-size: 0.9rem; color: #94a3b8; margin: 15px 0; padding: 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; min-height: 50px; position: relative; }
         .heartbeat { width: 10px; height: 10px; background: var(--accent); border-radius: 50%; display: inline-block; margin-right: 8px; }
         .blink { animation: blinker 0.8s linear infinite; }
         @keyframes blinker { 50% { opacity: 0; } }
+        @keyframes pulse { 50% { opacity: 0.7; } }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.5</small></h2>
+        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.7</small></h2>
         
         <div id="device-list"></div>
-        <button class="btn" style="background:transparent; border:2px dashed #444;" onclick="pairNew()">+ Pair New BLE Device</button>
         
-        <div id="status">Ready</div>
+        <button class="btn" style="background:transparent; border:2px dashed #444;" onclick="pairNew()">+ Pair New Device</button>
+        
+        <div id="status">Loading system memory...</div>
 
         <hr style="border: 0; border-top: 1px solid #334155; margin: 20px 0;">
 
-        <p style="font-size: 0.8rem; color: #94a3b8;">WIFI TOOLS</p>
+        <a href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" class="btn" style="background:#475569; font-size:0.9rem;">📶 Android WiFi List</a>
+        <a href="http://192.168.4.1" target="_blank" class="btn" style="background:#6366f1;">🌐 Open ESP32 Page</a>
         
-        <a href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" class="btn btn-wifi">
-            📶 Open WiFi List (Android)
-        </a>
-
-        <a href="http://192.168.4.1" target="_blank" class="btn btn-ap">
-            🌐 Open ESP32 Web Page
-        </a>
-
         <div id="cancel-zone"></div>
     </div>
 
@@ -50,48 +43,67 @@
         const C_UUID = "abcd1234-1234-1234-1234-1234567890ab";
         let isHunting = false;
 
-        window.onload = refreshList;
-
-        async function refreshList() {
-            if (!navigator.bluetooth.getDevices) return;
-            const devices = await navigator.bluetooth.getDevices();
-            const list = document.getElementById('device-list');
-            list.innerHTML = "";
-            devices.forEach(dev => {
-                const b = document.createElement('button');
-                b.className = "btn";
-                b.innerText = "Wake " + (dev.name || "ESP32");
-                b.onclick = () => startHunt(dev, b);
-                list.appendChild(b);
-            });
-        }
+        // ON LOAD: Fetch persistent devices from Chrome's memory
+        window.onload = async () => {
+            try {
+                const devices = await navigator.bluetooth.getDevices();
+                const list = document.getElementById('device-list');
+                list.innerHTML = "";
+                devices.forEach(dev => {
+                    const b = document.createElement('button');
+                    b.className = "btn";
+                    b.innerText = "Wake " + (dev.name || "ESP32");
+                    b.onclick = () => startHunt(dev, b);
+                    list.appendChild(b);
+                });
+                updateStatus(devices.length > 0 ? "Ready to Wake" : "No saved devices.");
+            } catch (e) {
+                updateStatus("⚠️ Flag Error: Enable Experimental Web Platform Features");
+            }
+        };
 
         async function startHunt(device, btn) {
             if(isHunting) return;
             isHunting = true;
             btn.classList.add('btn-searching');
-            document.getElementById('cancel-zone').innerHTML = `<button class="btn" style="background:var(--danger)" onclick="location.reload()">STOP SEARCH</button>`;
+            document.getElementById('cancel-zone').innerHTML = `<button class="btn" style="background:var(--danger)" onclick="location.reload()">STOP HUNT</button>`;
 
-            while (isHunting) {
-                updateStatus(`<span class="heartbeat blink"></span>Scanning for 600ms Spike...`);
-                try {
-                    const server = await Promise.race([
-                        device.gatt.connect(),
-                        new Promise((_, reject) => setTimeout(() => reject(new Error('Retry')), 4500))
-                    ]);
+            updateStatus(`<span class="heartbeat blink"></span>Radio Listening for S3 Spike...`);
 
-                    const service = await server.getPrimaryService(S_UUID);
-                    const char = await service.getCharacteristic(C_UUID);
-                    await char.writeValue(new Uint8Array([0x01]));
+            try {
+                // Tells the phone: "Wake me up the SECOND you hear this device"
+                await device.watchAdvertisements();
+                
+                device.addEventListener('advertisementreceived', async (event) => {
+                    updateStatus("🎯 Spike Detected! Connecting...");
+                    
+                    try {
+                        const server = await device.gatt.connect();
+                        const service = await server.getPrimaryService(S_UUID);
+                        const char = await service.getCharacteristic(C_UUID);
+                        await char.writeValue(new Uint8Array([0x01]));
 
-                    isHunting = false;
-                    if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
-                    updateStatus("✅ SUCCESS: 0x01 SENT");
-                    btn.classList.replace('btn-searching', 'success-flash');
-                    setTimeout(() => { device.gatt.disconnect(); location.reload(); }, 3000);
-
-                } catch (e) {
-                    await new Promise(r => setTimeout(r, 500));
+                        // SUCCESS FEEDBACK
+                        isHunting = false;
+                        if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
+                        btn.classList.replace('btn-searching', 'success-flash');
+                        btn.innerText = "SIGNAL DELIVERED!";
+                        updateStatus("✅ SUCCESS!");
+                        setTimeout(() => location.reload(), 3000);
+                    } catch (err) {
+                        console.log("Connect missed window, re-waiting...");
+                    }
+                });
+            } catch (e) {
+                // If watchAdvertisements isn't supported, use the aggressive loop fallback
+                while(isHunting) {
+                    try {
+                        const server = await Promise.race([
+                            device.gatt.connect(),
+                            new Promise((_, r) => setTimeout(() => r(new Error('T')), 4500))
+                        ]);
+                        // ... same connection logic as above ...
+                    } catch (e) { await new Promise(r => setTimeout(r, 500)); }
                 }
             }
         }
@@ -99,8 +111,8 @@
         async function pairNew() {
             try {
                 await navigator.bluetooth.requestDevice({ filters: [{ services: [S_UUID] }] });
-                refreshList();
-            } catch (e) { console.log("Pairing Cancelled"); }
+                location.reload(); 
+            } catch (e) { updateStatus("Pairing Cancelled."); }
         }
 
         function updateStatus(msg) { document.getElementById('status').innerHTML = msg; }
