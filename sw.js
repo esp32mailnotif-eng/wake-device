@@ -1,7 +1,10 @@
+const cacheName = 's3-v2.1-final'; // Changed name to force update
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open('s3-v2').then((cache) => cache.addAll(['index.html', 'manifest.json']))
+    caches.open(cacheName).then((cache) => cache.addAll(['index.html', 'manifest.json']))
   );
+  self.skipWaiting(); 
 });
 
 self.addEventListener('fetch', (e) => {
