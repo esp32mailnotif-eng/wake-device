@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S3 Wake Pro v2.2</title>
+    <title>S3 Wake Pro v2.3</title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root { --bg: #0f172a; --accent: #3b82f6; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
@@ -11,8 +11,9 @@
         .card { background: #1e293b; padding: 20px; border-radius: 16px; max-width: 400px; margin: auto; border: 1px solid #334155; flex-grow: 1; }
         .btn { background: var(--accent); border: none; padding: 18px; border-radius: 12px; color: white; font-size: 1.1rem; width: 100%; margin: 10px 0; cursor: pointer; transition: 0.3s; font-weight: 600; }
         .btn-searching { background: var(--warn) !important; animation: pulse 1.5s infinite; }
+        .btn-cancel { background: var(--danger); margin-top: 20px; font-size: 0.9rem; }
         .success-flash { background: var(--success) !important; transform: scale(1.05); }
-        #status { font-size: 0.9rem; color: #94a3b8; margin: 20px 0; padding: 15px; border-radius: 8px; background: #0f172a; min-height: 40px; border: 1px solid #334155; }
+        #status { font-size: 0.9rem; color: #94a3b8; margin: 20px 0; padding: 15px; border-radius: 8px; background: #0f172a; min-height: 50px; border: 1px solid #334155; line-height: 1.4; }
         footer { margin-top: 30px; font-size: 0.75rem; color: #475569; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
     </style>
@@ -20,16 +21,18 @@
 <body>
 
     <div class="card">
-        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.2</small></h2>
+        <h2>S3 Wake Pro <small style="color:var(--accent)">v2.3</small></h2>
         
         <div id="device-list"></div>
         <button class="btn" style="background:transparent; border:2px dashed #444;" onclick="pairNew()">+ Pair New Device</button>
         
         <div id="status">Ready to scan...</div>
 
+        <div id="cancel-zone"></div>
+
         <footer>
-            <strong>Continuous Wake Mode Enabled</strong><br>
-            Persistence requires <code>#experimental-web-platform-features</code>
+            <strong>Service Discovery Mode</strong><br>
+            Requires <code>#experimental-web-platform-features</code>
         </footer>
     </div>
 
@@ -42,7 +45,7 @@
 
         async function refreshList() {
             if (!navigator.bluetooth.getDevices) {
-                updateStatus("⚠️ Set chrome://flags to stay persistent!");
+                updateStatus("⚠️ PERSISTENCE ERROR: Enable chrome://flags");
                 return;
             }
             const devices = await navigator.bluetooth.getDevices();
@@ -56,7 +59,7 @@
                 b.onclick = () => startHunt(dev, b);
                 list.appendChild(b);
             });
-            updateStatus(devices.length > 0 ? "Tap a device to begin hunting" : "No saved devices.");
+            updateStatus(devices.length > 0 ? "Saved device found. Tap to begin hunting." : "No saved devices.");
         }
 
         async function startHunt(device, btn) {
@@ -65,35 +68,44 @@
             btn.classList.add('btn-searching');
             const originalText = btn.innerText;
 
+            // Show Cancel Button
+            const cz = document.getElementById('cancel-zone');
+            cz.innerHTML = `<button class="btn btn-cancel" onclick="location.reload()">STOP SEARCHING</button>`;
+
             while (isHunting) {
-                updateStatus("📡 Hunting... Waiting for ESP32 Spike");
+                updateStatus("📡 Hunting...<br>Waiting for ESP32 600ms Spike");
                 btn.innerText = "SEARCHING...";
                 
                 try {
+                    // Step 1: Physical Connection
                     const server = await device.gatt.connect();
+                    updateStatus("🔗 Found! Discovering Services...");
+
+                    // Step 2: Fresh Service Discovery (Fixes the Deep Sleep cache issue)
                     const service = await server.getPrimaryService(S_UUID);
                     const char = await service.getCharacteristic(C_UUID);
                     
+                    // Step 3: Write Command
                     await char.writeValue(new Uint8Array([0x01]));
                     
-                    // SUCCESS
+                    // SUCCESS FEEDBACK
                     isHunting = false; 
-                    if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
+                    if ("vibrate" in navigator) navigator.vibrate([200, 100, 200]);
                     
-                    updateStatus("✅ SUCCESS: SIGNAL RECEIVED");
+                    updateStatus("✅ SUCCESS!<br>0x01 Sent & Acknowledged");
                     btn.classList.remove('btn-searching');
                     btn.classList.add('success-flash');
-                    btn.innerText = "WAKE SENT!";
+                    btn.innerText = "SIGNAL SENT!";
                     
                     setTimeout(() => {
-                        btn.classList.remove('success-flash');
-                        btn.innerText = originalText;
                         device.gatt.disconnect();
+                        location.reload(); 
                     }, 4000);
 
                 } catch (e) {
-                    // Fail: ESP32 is in Deep Sleep. Wait 1s and retry the loop.
-                    updateStatus("S3 Sleeping... Next check in 1s");
+                    // Logic for Sleep: Wait 1 second and retry
+                    console.log("Retry Loop:", e.message);
+                    updateStatus("S3 Sleeping...<br>Retrying every 1s");
                     await new Promise(r => setTimeout(r, 1000));
                 }
             }
@@ -108,7 +120,7 @@
             } catch (e) { updateStatus("Pairing cancelled."); }
         }
 
-        function updateStatus(msg) { document.getElementById('status').innerText = msg; }
+        function updateStatus(msg) { document.getElementById('status').innerHTML = msg; }
     </script>
 </body>
 </html>
