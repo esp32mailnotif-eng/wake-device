@@ -3,74 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>S3 Wake Pro</title>
+    <title>S3 Wake Pro v2.1</title>
     <link rel="manifest" href="manifest.json">
     <style>
-        body { font-family: -apple-system, sans-serif; background: #0f172a; color: white; text-align: center; padding: 20px; }
-        .btn { background: #3b82f6; border: none; padding: 20px; border-radius: 12px; color: white; font-size: 1.2rem; width: 100%; margin-bottom: 15px; cursor: pointer; }
-        .btn-pair { background: #10b981; }
-        #status { font-size: 0.9rem; color: #94a3b8; margin-top: 20px; border: 1px solid #334155; padding: 10px; border-radius: 8px; }
+        :root { --bg: #0f172a; --accent: #3b82f6; --success: #10b981; --warn: #f59e0b; --danger: #ef4444; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); color: white; text-align: center; padding: 20px; min-height: 100vh; display: flex; flex-direction: column; }
+        .card { background: #1e293b; padding: 20px; border-radius: 16px; max-width: 400px; margin: auto; border: 1px solid #334155; flex-grow: 1; }
+        .btn { background: var(--accent); border: none; padding: 18px; border-radius: 12px; color: white; font-size: 1.1rem; width: 100%; margin: 10px 0; cursor: pointer; transition: 0.3s; font-weight: 600; }
+        .btn-pair { background: transparent; border: 2px dashed #475569; color: #94a3b8; }
+        .success-flash { background: var(--success) !important; transform: scale(1.05); }
+        #status { font-size: 0.9rem; color: #94a3b8; margin-top: 15px; padding: 12px; border-radius: 8px; background: #0f172a; }
+        footer { margin-top: 30px; font-size: 0.75rem; color: #475569; line-height: 1.4; }
+        code { color: var(--warn); }
     </style>
 </head>
 <body>
-    <h1>S3 Wake Pro <small>v2.0</small></h1>
-    
-    <div id="device-list">
-        </div>
 
-    <button class="btn btn-pair" onclick="pairNew()">+ Pair New Device</button>
-    
-    <div id="status">Ready.</div>
+    <div class="card">
+        <h2>S3 Wake Pro</h2>
+        
+        <div id="device-list"></div>
+        <button class="btn btn-pair" onclick="pairNew()">+ Pair New Device</button>
+        
+        <div id="status">Scanning for saved keys...</div>
+
+        <footer>
+            <strong>v2.1 (Persistent Edition)</strong><br>
+            If buttons disappear after refresh, check <code>chrome://flags</code> for <br>
+            <em>#experimental-web-platform-features</em>
+        </footer>
+    </div>
 
     <script>
         const S_UUID = "12345678-1234-1234-1234-1234567890ab";
         const C_UUID = "abcd1234-1234-1234-1234-1234567890ab";
 
-        // Register Service Worker for PWA
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
-        }
+        window.onload = refreshList;
 
         async function refreshList() {
             if (!navigator.bluetooth.getDevices) {
-                document.getElementById('status').innerText = "Update Chrome/Enable Flags";
+                updateStatus("⚠️ Flag Required for Persistence");
                 return;
             }
             const devices = await navigator.bluetooth.getDevices();
             const list = document.getElementById('device-list');
             list.innerHTML = "";
+            
             devices.forEach(dev => {
                 const b = document.createElement('button');
                 b.className = "btn";
                 b.innerText = "Wake " + (dev.name || "C3_WAKE");
-                b.onclick = () => connect(dev);
+                b.onclick = () => connectAndWake(dev, b);
                 list.appendChild(b);
             });
+            updateStatus(devices.length > 0 ? `Ready: ${devices.length} device(s) saved` : "No devices saved yet.");
         }
 
-        async function pairNew() {
-            const device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: [S_UUID] }]
-            });
-            await connect(device);
-            refreshList();
-        }
-
-        async function connect(device) {
+        async function connectAndWake(device, btn) {
             try {
-                document.getElementById('status').innerText = "Waiting for 600ms Spike...";
+                updateStatus("Waiting for 600ms Spike...");
+                btn.innerText = "Connecting...";
+                
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(S_UUID);
                 const char = await service.getCharacteristic(C_UUID);
+                
                 await char.writeValue(new Uint8Array([0x01]));
-                document.getElementById('status').innerText = "SENT: WAKE COMMAND";
-                device.gatt.disconnect();
+                
+                // Haptic Feedback: Double buzz (100ms on, 50ms off, 100ms on)
+                if ("vibrate" in navigator) {
+                    navigator.vibrate([100, 50, 100]); 
+                }
+
+                updateStatus("✅ SUCCESS: S3 AWAKE");
+                btn.classList.add('success-flash');
+                btn.innerText = "SIGNAL SENT!";
+                
+                setTimeout(() => {
+                    btn.classList.remove('success-flash');
+                    btn.innerText = "Wake " + (device.name || "C3_WAKE");
+                    device.gatt.disconnect();
+                }, 3000);
+
             } catch (e) {
-                document.getElementById('status').innerText = "Retry: S3 is in Deep Sleep.";
+                updateStatus("Waiting for device to wake up...");
+                btn.innerText = "Wake " + (device.name || "C3_WAKE");
             }
         }
 
-        window.onload = refreshList;
+        async function pairNew() {
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [S_UUID] }]
+                });
+                await connectAndWake(device, document.querySelector('.btn-pair'));
+                refreshList();
+            } catch (e) { updateStatus("Pairing cancelled."); }
+        }
+
+        function updateStatus(msg) { document.getElementById('status').innerText = msg; }
     </script>
 </body>
 </html>
